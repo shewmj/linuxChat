@@ -13,20 +13,23 @@
 #define SERVER_TCP_PORT		7001	// Default port
 #define BUFLEN			80  	// Buffer length
 
-int sd;
+int clientSocket;
+int connected;
 
-void *UserInput(void *arg);
+
+void *SendChat(void *arg);
+void InitializeClientSocket(char *host, int port);
+void ReceiveChat();
+
+
+
 
 
 
 int main (int argc, char **argv)
 {
-	int n, bytes_to_read;
 	int port;
-	struct hostent	*hp;
-	struct sockaddr_in server;
-	char  *host, *bp, rbuf[BUFLEN], sbuf[BUFLEN], **pptr;
-	char str[16];
+	char  *host;
 	pthread_t inputThread;
 
 	switch(argc)
@@ -44,25 +47,41 @@ int main (int argc, char **argv)
 			exit(1);
 	}
 
-	// Create the socket
-	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-	{
+	InitializeClientSocket(host, port);
+
+    pthread_create(&inputThread, NULL, SendChat, NULL);
+   	
+   	ReceiveChat();
+
+   	pthread_join(inputThread, NULL);
+	
+	return (0);
+}
+
+
+
+void InitializeClientSocket(char *host,int port) {
+
+	char **pptr;
+	struct hostent	*hp;
+	struct sockaddr_in server;
+	char str[16];
+
+	if ((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
 		perror("Cannot create socket");
 		exit(1);
 	}
 	bzero((char *)&server, sizeof(struct sockaddr_in));
 	server.sin_family = AF_INET;
 	server.sin_port = htons(port);
-	if ((hp = gethostbyname(host)) == NULL)
-	{
+	if ((hp = gethostbyname(host)) == NULL) {
 		fprintf(stderr, "Unknown server address\n");
 		exit(1);
 	}
 	bcopy(hp->h_addr, (char *)&server.sin_addr, hp->h_length);
 
-	// Connecting to the server
-	if (connect (sd, (struct sockaddr *)&server, sizeof(server)) == -1)
-	{
+	
+	if (connect (clientSocket, (struct sockaddr *)&server, sizeof(server)) == -1) {
 		fprintf(stderr, "Can't connect to server\n");
 		perror("connect");
 		exit(1);
@@ -70,60 +89,57 @@ int main (int argc, char **argv)
 	printf("Connected:    Server Name: %s\n", hp->h_name);
 	pptr = hp->h_addr_list;
 	printf("\t\tIP Address: %s\n", inet_ntop(hp->h_addrtype, *pptr, str, sizeof(str)));
-	//gets(sbuf); // get user's text
-	//memset(sbuf, '\0', BUFLEN);
+
+	connected = 1;
+}
 
 
-	
-    pthread_create(&inputThread, NULL, UserInput, NULL);
+
+
+
+
+
+void *SendChat(void *arg)
+{
+	char buf[BUFLEN];
+
+	while (connected) {
+		fgets(buf, BUFLEN, stdin);
+		printf("SEND: %s", buf);
+		fflush(stdout);
+		send (clientSocket, buf, BUFLEN, 0);
+	}
    
-	
+}
 
-	
-	bp = rbuf;
+
+
+
+void ReceiveChat() {
+	char *buf_ptr;
+	char buf[BUFLEN];
+	int bytes_to_read;
+	int recv_bytes;
+
+	buf_ptr = buf;
 	bytes_to_read = BUFLEN;
 
-	// client makes repeated calls to recv until no more data is expected to arrive.
-	n = 0;
-	while (1) {
-		while ((n = recv (sd, bp, bytes_to_read, 0)) < BUFLEN)
+	while (connected) {
+		recv_bytes = 0;
+		bytes_to_read = BUFLEN;
+		while ((recv_bytes = recv (clientSocket, buf_ptr, bytes_to_read, 0)) < BUFLEN)
 		{
-			bp += n;
-			bytes_to_read -= n;
+			buf_ptr += recv_bytes;
+			bytes_to_read -= recv_bytes;
 		}
-		printf ("RECV: %s", rbuf);
+		printf ("RECV: %s", buf);
 		fflush(stdout);
 	}
-	
 
-	// while (1) {
-	// 	n = recv (sd, bp, bytes_to_read, 0);
-	// 	printf ("%s\n", rbuf);
-	// }
 	fflush(stdout);
-	close (sd);
-	return (0);
+	close (clientSocket);
+
 }
-
-
-
-
-
-
-
-void *UserInput(void *arg)
-{
-	char sbuf[BUFLEN];
-	while (1) {
-		fgets(sbuf, BUFLEN, stdin);
-		printf("SEND: %s", sbuf);
-		fflush(stdout);
-		send (sd, sbuf, BUFLEN, 0);
-	}
-   
-}
-  
-
 
 
 

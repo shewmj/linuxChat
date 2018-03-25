@@ -18,9 +18,11 @@
 
 // Function Prototypes
 static void SystemFatal(const char* );
-int CreateServerSocket();
+int InitializeServerSocket();
+int AcceptConnection(int serverSocket);
 int CheckSockets();
 void SendToAll(char * buf);
+
 
 
 
@@ -37,13 +39,11 @@ int main (int argc, char **argv)
 	int maxSockNum;
 	int newConnection;
 	int nready;
-	int client_len;
-	struct sockaddr_in client_addr;
-   	int i;
 
-	serverSocket = CreateServerSocket();
 
-	for (i = 0; i < FD_SETSIZE; i++) {
+	serverSocket = InitializeServerSocket();
+
+	for (int i = 0; i < FD_SETSIZE; i++) {
 		clientSockets[i] = -1;
 	}
 	FD_ZERO(&allset);
@@ -59,59 +59,99 @@ int main (int argc, char **argv)
 	{
    		rset = allset;
    		nready = select(maxSockNum + 1, &rset, NULL, NULL, NULL);
-   		printf("triggered\n");
-
+   
   		if (FD_ISSET(serverSocket, &rset)) 
   		{		
+  			newConnection = AcceptConnection(serverSocket);
   			
-  			client_len = sizeof(client_addr);
-  			if ((newConnection = accept(serverSocket, (struct sockaddr *) &client_addr, &client_len)) == -1) {
-  				SystemFatal("accept error");
-  			}
-
-  			char temp[100];
-  			sprintf(temp, "New User Connected: %d", newConnection);
- 			SendToAll(temp);
-
-  			fcntl(newConnection, F_SETFL, O_NONBLOCK);
-
-  			printf(" Remote Address:  %s\n", inet_ntoa(client_addr.sin_addr));
-
-  			for (i = 0; i < FD_SETSIZE; i++) {
-				if (clientSockets[i] < 0) {
-					clientSockets[i] = newConnection;	// save descriptor
-					break;
-				}
-				
-				if (i == FD_SETSIZE) {
-					printf ("Too many clients\n");
-					exit(1);
-				}
-  			}
-  				
-
-			FD_SET(newConnection, &allset);     // add new descriptor to set
 			if (newConnection > maxSockNum) {
 				maxSockNum = newConnection;	
 			}
 
-			if (i > clients) {
-				clients = i;	// new max index in client[] array
-			}
-
 			if (--nready <= 0) {
-				continue;	// no more readable descriptors
+				continue;	
 			}
 		} else {
 			nready = CheckSockets(nready);
 		}
+	}
+	return 1;
+}
 
-		
 
-		
+
+int InitializeServerSocket() {
+
+	struct sockaddr_in server;
+	int socketID;
+	int arg = 1;
+
+
+	if ((socketID = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+		SystemFatal("Cannot Create Socket!");
 	}
 
-	return 1;
+	if (setsockopt (socketID, SOL_SOCKET, SO_REUSEADDR, &arg, sizeof(arg)) == -1) {
+		SystemFatal("setsockopt");
+	}
+
+	bzero((char *)&server, sizeof(struct sockaddr_in));
+	server.sin_family = AF_INET;
+	server.sin_port = htons(SERVER_TCP_PORT);
+	server.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections from any client
+
+	if (bind(socketID, (struct sockaddr *)&server, sizeof(server)) == -1) {
+		SystemFatal("bind error");
+	}
+	
+	listen(socketID, MAXCLIENTS);
+
+	return socketID;
+}
+
+
+
+
+
+int AcceptConnection(int serverSocket) {
+
+	int newConnection;
+	int client_len;
+	struct sockaddr_in client_addr;
+	int i;
+
+	client_len = sizeof(client_addr);
+	if ((newConnection = accept(serverSocket, (struct sockaddr *) &client_addr, &client_len)) == -1) {
+		SystemFatal("accept error");
+	}
+
+	char temp[100];
+	sprintf(temp, "New User Connected: %d", newConnection);
+	SendToAll(temp);
+
+	fcntl(newConnection, F_SETFL, O_NONBLOCK);
+
+	printf(" Remote Address:  %s\n", inet_ntoa(client_addr.sin_addr));
+
+	for (i = 0; i < FD_SETSIZE; i++) {
+		if (clientSockets[i] < 0) {
+			clientSockets[i] = newConnection;	
+			break;
+		}
+		
+		if (i == FD_SETSIZE) {
+			printf ("Too many clients\n");
+			exit(1);
+		}
+	}
+
+	if (i > clients) {
+		clients = i;	
+	}
+
+	FD_SET(newConnection, &allset);    
+	return newConnection;
+
 }
 
 
@@ -135,28 +175,21 @@ int CheckSockets(int nready) {
 			bytes_to_read = BUFLEN;
 			
 			while ((n = recv(sockfd, bufp, bytes_to_read, 0)) < BUFLEN && n != 0) {
-				printf(" hi %d\n", n);
-				//n = read(sockfd, bufp, bytes_to_read);
 				bufp += n;
 				bytes_to_read -= n;
 			}
 
-			// printf("bytes %d\n", bytes_to_read);
-
 			if (n != 0) {
-				printf("RECV: %s\n", bufp);
 				SendToAll(bufp);
 			}
-			
-			// printf("RECV: %s\n", bufp);
-			// SendToAll(bufp);
-
+		
 			if (n == 0) {
 				char temp[100];
-	  			sprintf(temp, "User Exit: %d", sockfd);
+	  			sprintf(temp, "Client - %d left.", sockfd);
 	 			SendToAll(temp);
 				close(sockfd);
 				FD_CLR(sockfd, &allset);
+				//clients--;
 				clientSockets[i] = -1;
 			}
  
@@ -179,10 +212,8 @@ void SendToAll(char * buf) {
 		if ((socket = clientSockets[i]) < 0) {
 			continue;
 		}
-		write(socket, buf, BUFLEN);   // echo to client
-
+		write(socket, buf, BUFLEN); 
 	}
-
 	printf("Sent: %s\n", buf);
 }
 
@@ -191,57 +222,6 @@ void SendToAll(char * buf) {
 
 
 
-
-
-
-
-
-
-
-int CreateServerSocket() {
-
-	struct sockaddr_in server;
-	int socketID;
-	int arg = 1;
-
-
-	if ((socketID = socket(AF_INET, SOCK_STREAM, 0)) == -1){
-		SystemFatal("Cannot Create Socket!");
-	}
-
-	if (setsockopt (socketID, SOL_SOCKET, SO_REUSEADDR, &arg, sizeof(arg)) == -1) {
-		SystemFatal("setsockopt");
-	}
-
-	bzero((char *)&server, sizeof(struct sockaddr_in));
-	server.sin_family = AF_INET;
-	server.sin_port = htons(SERVER_TCP_PORT);
-	server.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections from any client
-
-	if (bind(socketID, (struct sockaddr *)&server, sizeof(server)) == -1)
-		SystemFatal("bind error");
-	
-	listen(socketID, 10);
-
-	return socketID;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// Prints the error stored in errno and aborts the program.
 static void SystemFatal(const char* message)
 {
 	perror (message);
