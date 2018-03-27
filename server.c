@@ -10,7 +10,8 @@
 #include <fcntl.h>
 
 #define SERVER_TCP_PORT 7005	// Default port
-#define BUFLEN	80		//Buffer length
+#define SBUFLEN	100		//Buffer length
+#define RBUFLEN	80	
 #define TRUE	1
 #define MAXLINE 4096
 #define MAXCLIENTS 10
@@ -22,7 +23,7 @@ int InitializeServerSocket();
 int AcceptConnection(int serverSocket);
 char * GetClientName(int clientSocket);
 int CheckSockets();
-void SendToAll(char * buf);
+void SendToAll(char * buf, int client);
 
 
 
@@ -41,7 +42,6 @@ int main (int argc, char **argv)
 	int newConnection;
 	int nready;
 
-
 	serverSocket = InitializeServerSocket();
 
 	for (int i = 0; i < FD_SETSIZE; i++) {
@@ -49,26 +49,21 @@ int main (int argc, char **argv)
 	}
 	FD_ZERO(&allset);
 	FD_SET(serverSocket, &allset);
-
 	fcntl(serverSocket, F_SETFL, O_NONBLOCK);
-
 	maxSockNum = serverSocket;
 	clients = -1;
-
 
 	while (TRUE)
 	{
    		rset = allset;
    		nready = select(maxSockNum + 1, &rset, NULL, NULL, NULL);
-   
+   		
   		if (FD_ISSET(serverSocket, &rset)) 
   		{		
   			newConnection = AcceptConnection(serverSocket);
-  			
 			if (newConnection > maxSockNum) {
 				maxSockNum = newConnection;	
 			}
-
 			if (--nready <= 0) {
 				continue;	
 			}
@@ -76,6 +71,9 @@ int main (int argc, char **argv)
 			nready = CheckSockets(nready);
 		}
 	}
+
+
+	free(clientNames);
 	return 1;
 }
 
@@ -86,25 +84,19 @@ int InitializeServerSocket() {
 	struct sockaddr_in server;
 	int socketID;
 	int arg = 1;
-
-
 	if ((socketID = socket(AF_INET, SOCK_STREAM, 0)) == -1){
 		SystemFatal("Cannot Create Socket!");
 	}
-
 	if (setsockopt (socketID, SOL_SOCKET, SO_REUSEADDR, &arg, sizeof(arg)) == -1) {
 		SystemFatal("setsockopt");
 	}
-
 	bzero((char *)&server, sizeof(struct sockaddr_in));
 	server.sin_family = AF_INET;
 	server.sin_port = htons(SERVER_TCP_PORT);
 	server.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections from any client
-
 	if (bind(socketID, (struct sockaddr *)&server, sizeof(server)) == -1) {
 		SystemFatal("bind error");
 	}
-	
 	listen(socketID, MAXCLIENTS);
 
 	return socketID;
@@ -121,66 +113,36 @@ int AcceptConnection(int serverSocket) {
 	struct sockaddr_in client_addr;
 	int i;
 	char * clientName;
-
-
 	client_len = sizeof(client_addr);
+
 	if ((newConnection = accept(serverSocket, (struct sockaddr *) &client_addr, &client_len)) == -1) {
 		SystemFatal("accept error");
 	}
-
-	char temp[100];
-	sprintf(temp, "New User Connected: %d", newConnection);
-	SendToAll(temp);
-
 	fcntl(newConnection, F_SETFL, O_NONBLOCK);
-
-	printf(" Remote Address:  %s\n", inet_ntoa(client_addr.sin_addr));
-
-
-	clientName = GetClientName(newConnection);
-
 	for (i = 0; i < FD_SETSIZE; i++) {
 		if (clientSockets[i] < 0) {
 			clientSockets[i] = newConnection;	
-			strcpy(clientNames[i], clientName);
 			break;
 		}
-		
 		if (i == FD_SETSIZE) {
 			printf ("Too many clients\n");
 			exit(1);
 		}
 	}
-
 	if (i > clients) {
 		clients = i;	
 	}
-
 	FD_SET(newConnection, &allset);    
 	return newConnection;
-
 }
 
-
-char * GetClientName(int clientSocket) {
-	ssize_t n;
-	char *bufp, buf[BUFLEN];
-	int bytes_to_read;
-
-	while ((n = recv(clientSocket, bufp, bytes_to_read, 0)) < BUFLEN && n != 0) {
-		bufp += n;
-		bytes_to_read -= n;
-	}
-
-	//strcpy(clientNames[clientID], bufp);
-	//clientNames[clientID] = 
-	return bufp;
-}
 
 
 int CheckSockets(int nready) {
 	int count = 0;
-	char *bufp, buf[BUFLEN];
+	char *bufp, buf[RBUFLEN];
+	char echo[SBUFLEN];
+	char chatUpdate[SBUFLEN];
 	int bytes_to_read;
 	int sockfd;
 	ssize_t n;
@@ -194,21 +156,29 @@ int CheckSockets(int nready) {
 		{
 			count++;
 			bufp = buf;
-			bytes_to_read = BUFLEN;
+			bytes_to_read = RBUFLEN;
 			
-			while ((n = recv(sockfd, bufp, bytes_to_read, 0)) < BUFLEN && n != 0) {
+			while ((n = recv(sockfd, bufp, bytes_to_read, 0)) < RBUFLEN && n != 0) {
 				bufp += n;
 				bytes_to_read -= n;
 			}
 
 			if (n != 0) {
-				SendToAll(bufp);
+				//first message from client is their name
+				if (clientNames[i] == NULL) {
+					clientNames[i] = strdup(buf);
+					sprintf(chatUpdate, "*%s* connected.\n", clientNames[i]);
+					SendToAll(chatUpdate, i);
+				} else {
+					strcpy(echo, clientNames[i]);
+					strcat(echo, ": ");
+					strcat(echo, bufp);
+					SendToAll(echo, i);
+				}
 			}
-		
 			if (n == 0) {
-				char temp[100];
-	  			sprintf(temp, "Client - %d left.", sockfd);
-	 			SendToAll(temp);
+	  			sprintf(chatUpdate, "*%s* left.", clientNames[i]);
+	 			SendToAll(chatUpdate, i);
 				close(sockfd);
 				FD_CLR(sockfd, &allset);
 				//clients--;
@@ -225,18 +195,17 @@ int CheckSockets(int nready) {
 }
 
 
-
-void SendToAll(char * buf) {
-
+//send to all except one client
+void SendToAll(char * buf, int client) {
 	int socket;
 	for (int i = 0; i <= clients; i++) {
-
-		if ((socket = clientSockets[i]) < 0) {
+		if ((socket = clientSockets[i]) < 0 || i == client) {
 			continue;
 		}
-		write(socket, buf, BUFLEN); 
+		write(socket, buf, SBUFLEN); 
 	}
-	printf("Sent: %s\n", buf);
+	printf("%s", buf);
+	fflush(stdout);
 }
 
 
