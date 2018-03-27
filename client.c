@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <string.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -21,7 +22,7 @@ void *SendChat(void *arg);
 void InitializeClientSocket(char *host, int port);
 void ReceiveChat();
 
-
+char * name;
 
 
 
@@ -42,6 +43,8 @@ int main (int argc, char **argv)
 			host =	argv[1];
 			port =	atoi(argv[2]);	// User specified port
 		break;
+		case 4:
+			name = argv[3];
 		default:
 			fprintf(stderr, "Usage: %s host [port]\n", argv[0]);
 			exit(1);
@@ -66,6 +69,7 @@ void InitializeClientSocket(char *host,int port) {
 	struct hostent	*hp;
 	struct sockaddr_in server;
 	char str[16];
+	char clientName[BUFLEN];
 
 	if ((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
 		perror("Cannot create socket");
@@ -86,6 +90,18 @@ void InitializeClientSocket(char *host,int port) {
 		perror("connect");
 		exit(1);
 	}
+
+
+	strcpy(clientName, name);
+
+
+	send (clientSocket, clientName, BUFLEN, 0);
+
+
+
+
+
+
 	printf("Connected:    Server Name: %s\n", hp->h_name);
 	pptr = hp->h_addr_list;
 	printf("\t\tIP Address: %s\n", inet_ntop(hp->h_addrtype, *pptr, str, sizeof(str)));

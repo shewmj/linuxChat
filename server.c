@@ -20,12 +20,13 @@
 static void SystemFatal(const char* );
 int InitializeServerSocket();
 int AcceptConnection(int serverSocket);
+char * GetClientName(int clientSocket);
 int CheckSockets();
 void SendToAll(char * buf);
 
 
 
-
+char * clientNames[FD_SETSIZE];
 int clientSockets[FD_SETSIZE];
 int clients;
 fd_set rset, allset;
@@ -119,6 +120,8 @@ int AcceptConnection(int serverSocket) {
 	int client_len;
 	struct sockaddr_in client_addr;
 	int i;
+	char * clientName;
+
 
 	client_len = sizeof(client_addr);
 	if ((newConnection = accept(serverSocket, (struct sockaddr *) &client_addr, &client_len)) == -1) {
@@ -133,9 +136,13 @@ int AcceptConnection(int serverSocket) {
 
 	printf(" Remote Address:  %s\n", inet_ntoa(client_addr.sin_addr));
 
+
+	clientName = GetClientName(newConnection);
+
 	for (i = 0; i < FD_SETSIZE; i++) {
 		if (clientSockets[i] < 0) {
 			clientSockets[i] = newConnection;	
+			strcpy(clientNames[i], clientName);
 			break;
 		}
 		
@@ -154,6 +161,21 @@ int AcceptConnection(int serverSocket) {
 
 }
 
+
+char * GetClientName(int clientSocket) {
+	ssize_t n;
+	char *bufp, buf[BUFLEN];
+	int bytes_to_read;
+
+	while ((n = recv(clientSocket, bufp, bytes_to_read, 0)) < BUFLEN && n != 0) {
+		bufp += n;
+		bytes_to_read -= n;
+	}
+
+	//strcpy(clientNames[clientID], bufp);
+	//clientNames[clientID] = 
+	return bufp;
+}
 
 
 int CheckSockets(int nready) {
