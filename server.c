@@ -177,11 +177,13 @@ int CheckSockets(int nready) {
 				}
 			}
 			if (n == 0) {
-	  			sprintf(chatUpdate, "*%s* left.", clientNames[i]);
+	  			sprintf(chatUpdate, "*%s* left.\n", clientNames[i]);
 	 			SendToAll(chatUpdate, i);
 				close(sockfd);
 				FD_CLR(sockfd, &allset);
 				//clients--;
+				free(clientNames[i]);
+				clientNames[i] = NULL; 
 				clientSockets[i] = -1;
 			}
  
