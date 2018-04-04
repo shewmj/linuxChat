@@ -9,7 +9,7 @@
 #include <string.h>
 #include <fcntl.h>
 
-#define SERVER_TCP_PORT 7005	// Default port
+#define SERVER_TCP_PORT 7000	// Default port
 #define SBUFLEN	100		//Buffer length
 #define RBUFLEN	80	
 #define TRUE	1
@@ -80,7 +80,6 @@ int main (int argc, char **argv)
 
 
 int InitializeServerSocket() {
-
 	struct sockaddr_in server;
 	int socketID;
 	int arg = 1;
@@ -107,12 +106,10 @@ int InitializeServerSocket() {
 
 
 int AcceptConnection(int serverSocket) {
-
 	int newConnection;
-	int client_len;
+	socklen_t client_len;
 	struct sockaddr_in client_addr;
 	int i;
-	char * clientName;
 	client_len = sizeof(client_addr);
 
 	if ((newConnection = accept(serverSocket, (struct sockaddr *) &client_addr, &client_len)) == -1) {
@@ -146,7 +143,6 @@ int CheckSockets(int nready) {
 	int bytes_to_read;
 	int sockfd;
 	ssize_t n;
-
 	for (int i = 0; i <= clients; i++) {
 		if ((sockfd = clientSockets[i]) < 0) {
 			continue;
@@ -157,12 +153,10 @@ int CheckSockets(int nready) {
 			count++;
 			bufp = buf;
 			bytes_to_read = RBUFLEN;
-			
 			while ((n = recv(sockfd, bufp, bytes_to_read, 0)) < RBUFLEN && n != 0) {
 				bufp += n;
 				bytes_to_read -= n;
 			}
-
 			if (n != 0) {
 				//first message from client is their name
 				if (clientNames[i] == NULL) {
@@ -186,7 +180,6 @@ int CheckSockets(int nready) {
 				clientNames[i] = NULL; 
 				clientSockets[i] = -1;
 			}
- 
 			if (--nready <= 0){
 				break;  
 			}
@@ -220,3 +213,4 @@ static void SystemFatal(const char* message)
 	perror (message);
 	exit (EXIT_FAILURE);
 }
+

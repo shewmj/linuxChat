@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#define SERVER_TCP_PORT		7001	
+#define SERVER_TCP_PORT		7000	
 #define SBUFLEN			80  	
 #define RBUFLEN			100  	
 #define NBUFLEN			20  	
@@ -19,13 +19,14 @@
 
 int clientSocket;
 int connected;
+FILE *fp;
 
 
 void *SendChat(void *arg);
 void InitializeClientSocket(char *host, int port);
 void ReceiveChat();
 
-char * name;
+char * username;
 
 
 int main (int argc, char **argv)
@@ -33,21 +34,31 @@ int main (int argc, char **argv)
 	int port;
 	char  *host;
 	pthread_t inputThread;
+	char * fileName;
+	fp = NULL;
 
 	switch(argc)
 	{
 		case 3:
-			name = argv[1];
-			host =	argv[2];	
-			port =	SERVER_TCP_PORT;
+			username = argv[1];
+			host = argv[2];	
+			port = SERVER_TCP_PORT;
 		break;
 		case 4:
-			name = argv[1];
-			host =	argv[2];
-			port =	atoi(argv[3]);	
+			username = argv[1];
+			host = argv[2];
+			port = atoi(argv[3]);	
+		break;
+		case 5:
+			username = argv[1];
+			host = argv[2];
+			port = atoi(argv[3]);
+			fileName = argv[4];
+			strcat(fileName, ".txt");
+			fp = fopen(fileName, "w+");
 		break;	
 		default:
-			fprintf(stderr, "Usage: %s name host [port]\n", argv[0]);
+			fprintf(stderr, "Usage: %s username host [port] [filename]\n", argv[0]);
 			exit(1);
 	}
 
@@ -55,7 +66,7 @@ int main (int argc, char **argv)
     pthread_create(&inputThread, NULL, SendChat, NULL);
    	ReceiveChat();
    	pthread_join(inputThread, NULL);
-	
+
 	return (0);
 }
 
@@ -86,17 +97,13 @@ void InitializeClientSocket(char *host,int port) {
 		perror("connect");
 		exit(1);
 	}
-
+	
 	//send server user name
-	strcpy(clientName, name);
+	strcpy(clientName, username);
 	send (clientSocket, clientName, SBUFLEN, 0);
-
-	printf("Connected.\n");
+	printf("Connected. Enter 'q' to exit chat.\n");
 	connected = 1;
 }
-
-
-
 
 
 
@@ -106,8 +113,17 @@ void *SendChat(void *arg)
 	char buf[SBUFLEN];
 	while (connected) {
 		fgets(buf, SBUFLEN, stdin);
+		if(strcmp(buf, "q\n") == 0) {
+			printf("Disconnected.\n");
+			connected = 0;
+			break;
+		}
+		fprintf(fp, "%s\n", buf);
 		send (clientSocket, buf, SBUFLEN, 0);
 	}
+	close (clientSocket);
+	fclose(fp);
+	exit(0);
    	return NULL;
 }
 
@@ -130,13 +146,12 @@ void ReceiveChat() {
 			buf_ptr += recv_bytes;
 			bytes_to_read -= recv_bytes;
 		}
+		fprintf(fp, "%s\n", buf);
 		printf ("%s", buf);
 		fflush(stdout);
 	}
-
+	
 	fflush(stdout);
-	close (clientSocket);
-
 }
 
 
