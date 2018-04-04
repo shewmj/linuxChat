@@ -63,7 +63,7 @@ int main (int argc, char **argv)
 	}
 
 	InitializeClientSocket(host, port);
-    pthread_create(&inputThread, NULL, SendChat, NULL);
+	pthread_create(&inputThread, NULL, SendChat, NULL);
    	ReceiveChat();
    	pthread_join(inputThread, NULL);
 
@@ -118,12 +118,16 @@ void *SendChat(void *arg)
 			connected = 0;
 			break;
 		}
-		fprintf(fp, "%s\n", buf);
+		if (fp) {
+			fprintf(fp, "%s\n", buf);
+		}
 		send (clientSocket, buf, SBUFLEN, 0);
 	}
 	close (clientSocket);
-	fclose(fp);
-	exit(0);
+	if (fp) {
+		fclose(fp);
+	}
+	exit(EXIT_SUCCESS);
    	return NULL;
 }
 
@@ -139,10 +143,12 @@ void ReceiveChat() {
 
 	//print anything received to screen
 	while (connected) {
+		printf("receiving\n");
 		recv_bytes = 0;
 		bytes_to_read = RBUFLEN;
 		while ((recv_bytes = recv (clientSocket, buf_ptr, bytes_to_read, 0)) < RBUFLEN)
 		{
+			printf("recv_bytes\n");
 			buf_ptr += recv_bytes;
 			bytes_to_read -= recv_bytes;
 		}
